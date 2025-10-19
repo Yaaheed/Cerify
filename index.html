@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certify Digital Certificate Platform</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configure Tailwind for Inter font -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        margin: 0;
+        font-family: 'Inter', sans-serif;
+        background-color: #f3f4f6;
+      }
+      #root {
+          min-height: 100vh;
+      }
+    </style>
+    <!-- Load React, ReactDOM, and Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!--
+        Inject Firebase Config: Set global variables before Firebase initialization.
+        Replace with your actual Firebase config JSON string and app ID.
+        WARNING: For production, inject securely via server-side or environment; do not hardcode sensitive keys in client-side code.
+    -->
+    <script>
+        // Example: Replace with your Firebase config
+        window.__firebase_config = '{"apiKey":"AIzaSyC3YIT4VCjO-bWBU21-BNwxgjW0pC6gZgE","authDomain":"certify-a738d.firebaseapp.com","projectId":"certify-a738d","storageBucket":"certify-a738d.firebasestorage.app","messagingSenderId":"274690691475","appId":"1:274690691475:web:c7c9a4c9c246cdfbe3d866"}';
+        window.__app_id = 'your-app-id';  // e.g., 'certify-app-1'
+    </script>
+
+    <!--
+        Firebase Module Imports: Expose functions globally for the Babel script.
+    -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.1.0/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, signOut, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.1.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc, writeBatch, addDoc, getDocs, Timestamp } from "https://www.gstatic.com/firebasejs/9.1.0/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.1.0/firebase-storage.js";
+
+        // Expose functions globally
+        window.initializeApp = initializeApp;
+        window.getAuth = getAuth;
+        window.signInWithCustomToken = signInWithCustomToken;
+        window.signInAnonymously = signInAnonymously;
+        window.signOut = signOut;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.getFirestore = getFirestore;
+        window.doc = doc;
+        window.setDoc = setDoc;
+        window.getDoc = getDoc;
+        window.collection = collection;
+        window.query = query;
+        window.where = where;
+        window.onSnapshot = onSnapshot;
+        window.updateDoc = updateDoc;
+        window.writeBatch = writeBatch;
+        window.addDoc = addDoc;
+        window.getDocs = getDocs;
+        window.Timestamp = Timestamp;
+        window.getStorage = getStorage;
+        window.ref = ref;
+        window.uploadBytes = uploadBytes;
+        window.getDownloadURL = getDownloadURL;
+
+        console.log("Firebase core functions are loaded and exposed globally for React.");
+    </script>
+
+    <!-- Register Service Worker for PWA -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(registration => {
+                    console.log('Service Worker registered with scope:', registration.scope);
+                })
+                .catch(error => {
+                    console.log('Service Worker registration failed:', error);
+                });
+        }
+    </script>
+</head>
+<body>
+    <div id="root">
+        <!-- React component will render here -->
+    </div>
+
+    <script type="text/babel">
+        
+        const { useState, useEffect, useCallback, useMemo } = React;
+
+
+        // --- Global Constants and Configuration (Mandatory Canvas Variables) ---
+        // Access global variables __app_id, __firebase_config, __initial_auth_token
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        let firebaseConfig = {};
+        // Parse __firebase_config, which is provided as a string by the environment
+        try {
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                 firebaseConfig = JSON.parse(__firebase_config);
+            } else {
+                 throw new Error("Firebase config not provided.");
+            }
+        } catch (e) {
+            console.error("Firebase Config Error:", e);
+            // Firebase config is required; app will not initialize without valid credentials.
+        }
+        
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const apiKey = ""; // API key for Gemini API is left empty for Canvas runtime injection.
+
+        // WARNING: In a production system, this salt MUST NOT be in client-side code.
+        // The secure hashing and comparison MUST be done on a secure backend (Cloud Function).
+        const GLOBAL_HASH_SALT = 'certverify-secret-salt-3982'; 
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+        // --- Utility Functions ---
+
+        /**
+         * Simulates a secure, one-way hash of the verification token.
+         * WARNING: This client-side implementation is INSECURE for production.
+         * The combined token+salt should be hashed with SHA256 in a Cloud Function.
+         */
+        const simulateHash = (token, salt) => {
+            if (!token) return '';
+            // Simple obfuscation for client-side demo
+            const combined = token + salt;
+            return combined.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 1)).join('');
+        };
+
+        const generateToken = () => {
+            return typeof crypto.randomUUID !== 'undefined' ? crypto.randomUUID().replace(/-/g, '').substring(0, 16) : Math.random().toString(36).substring(2, 18);
+        };
+
+        const generateCertId = () => {
+             return 'CERT-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        }
+
+        const getFirestoreCollectionPath = (collectionName, isPublic = true) => {
+            if (isPublic) {
+                // Public data: /artifacts/{appId}/public/data/certificates
+                return `artifacts/${appId}/public/data/${collectionName}`;
+            }
+            // Private data (not used for certificates): /artifacts/{appId}/users/{userId}/{collectionName}
+            return `artifacts/${appId}/users/${userId}/${collectionName}`; 
+        };
+
+        const formatTimestamp = (timestamp) => {
+            if (!timestamp) return 'N/A';
+            // Handle Firestore Timestamp format
+            if (timestamp.toDate) return timestamp.toDate().toLocaleDateString();
+            // Handle Date object or ISO string
+            return new Date(timestamp).toLocaleDateString();
+        };
+
+        const callGeminiApi = async (systemPrompt, userQuery) => {
+             // In this version, we will actually attempt the API call.
+             // The API key is injected by the Canvas environment.
+
+             const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+             };
+
+             // Exponential backoff logic
+             for (let i = 0; i < 3; i++) {
+                 try {
+                     const response = await fetch(GEMINI_API_URL, {
+                         method: 'POST',
+                         headers: { 'Content-Type': 'application/json' },
+                         body: JSON.stringify(payload)
+                     });
+
+                     if (!response.ok) {
+                         const errorBody = await response.json();
+                         throw new Error(`Gemini API HTTP error: ${response.status} - ${JSON.stringify(errorBody)}`);
+                     }
+
+                     const result = await response.json();
+                     const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                     if (text) return text;
+                     
+                     throw new Error("Gemini API response was missing content.");
+
+                 } catch (error) {
+                     console.error(`Attempt ${i + 1} failed:`, error.message);
+                     if (i < 2) {
+                         // Exponential delay
+                         await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+                     } else {
+                         throw new Error("Failed to connect to Gemini API after multiple retries.");
+                     }
+                 }
+             }
+        };
+
+        /**
+         * Mocks the generation of a certificate PDF by creating a text-based Blob.
+         */
+        const generateCertificatePdfData = (data) => {
+            const issueDateStr = formatTimestamp(data.issueDate);
+            const expiryDateStr = data.expiryDate ? formatTimestamp(data.expiryDate) : 'None';
+            const customFieldsStr = Object.keys(data.customFields).length > 0
+                ? Object.entries(data.customFields).map(([key, value]) => `\n- ${key}: ${value}`).join('')
+                : 'None';
+            
+            const content = `
+*************************************************************
+|         SECURE DIGITAL CERTIFICATE OF ACHIEVEMENT         |
+*************************************************************
+
+Issuer: ${data.issuingInstitutionName}
+Recipient: ${data.recipientName}
+Recipient Email: ${data.recipientEmail || 'N/A'}
+
+Title: ${data.title}
+Grade/Score: ${data.grade}
+Description: ${data.description}
+
+--- Verification Details ---
+Certificate ID: ${data.certId}
+Issue Date: ${issueDateStr}
+Expiry Date: ${expiryDateStr}
+Batch ID: ${data.batchId || 'N/A'}
+
+---
+Additional Metadata:
+${customFieldsStr}
+*************************************************************
+This document is valid only when successfully verified on the
+Certify platform using the unique ID and Token.
+Status: VALID (as of creation)
+*************************************************************
+`;
+            return new Blob([content], { type: 'application/pdf' });
+        };
+
+
+        const Icon = ({ name, className = "w-5 h-5" }) => {
+            const icons = {
+                User: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>,
+                ShieldCheck: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></svg>,
+                FileText: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 12H8" /><path d="M16 16H8" /><path d="M16 12H12" /></svg>,
+                Plus: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>,
+                X: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>,
+                LogOut: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>,
+                CheckCircle: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.6 9.9" /><path d="M12 2v10" /><path d="m22 4-7.1 7.1" /><path d="m11 11 2 2 4-4" /></svg>,
+                Sparkles: <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.8 3.5c-.3-1.1-1.3-1.9-2.5-2.2-.4-.1-.7-.2-1-.2H9.7c-.3 0-.6.1-1 .2-1.2.3-2.2 1.1-2.5 2.2L6 4.7l-1.3 2.1c-.3.5-.4 1.1-.2 1.7l.2 1.1c.2.6.5 1.1 1 1.5l1.6 1.3 1 1.8c.2.4.5.7 1 .9h1.4c.5 0 1-.3 1.2-.7l1.1-2.1c.3-.5.5-1.1.5-1.7l-.1-1.1c-.2-.6-.5-1.1-1-1.5l-1.6-1.3-1-1.8c-.2-.4-.5-.7-1-.9h-1.4c-.5 0-1 .3-1.2.7L8.7 8.3c-.3.5-.5 1.1-.5 1.7l.1 1.1c.2.6.5 1.1 1 1.5l1.6 1.3 1 1.8c.2.4.5.7 1 .9h1.4c.5 0 1-.3 1.2-.7l1.1-2.1c.3-.5.5-1.1.5-1.7l-.1-1.1c-.2-.6-.5-1.1-1-1.5l-1.6-1.3-1-1.8c-.2-.4-.5-.7-1-.9h-1.4c-.5 0-1 .3-1.2.7z" /></svg>
+            };
+            return icons[name] || <div className={className}>?</div>;
+        };
+
+        // --- Toast Notification Component ---
+        const Toast = ({ message, type, onClose }) => {
+            const colorClasses = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                info: 'bg-blue-500',
+            };
+
+            useEffect(() => {
+                const timer = setTimeout(onClose, 8000); 
+                return () => clearTimeout(timer);
+            }, [onClose]);
+
+            return (
+                <div className={`fixed bottom-5 right-5 p-4 rounded-xl shadow-2xl text-white ${colorClasses[type]} transition-opacity duration-300 z-50`}>
+                    {message}
+                    <button onClick={onClose} className="ml-3 font-bold">
+                        <Icon name="X" className="w-4 h-4 inline" />
+                    </button>
+                </div>
+            );
+        };
+
+
+        // --- App Component ---
+        const App = () => {
+            
+            const [db, setDb] = useState(null);
+            const [auth, setAuth] = useState(null);
+            const [user, setUser] = useState(null);
+            const [userId, setUserId] = useState(null);
+            const [userRole, setUserRole] = useState(null); // 'issuer' or null (default)
+            const [isAuthReady, setIsAuthReady] = useState(false);
+
+            const [currentPage, setCurrentPage] = useState('landing'); 
+            const [toast, setToast] = useState(null);
+
+            const showToast = (message, type = 'info') => {
+                setToast({ message, type });
+            };
+
+            // Hardcoded Institution Name for the Issuer (for this single-file demo)
+            const institutionName = "Certify Solutions Institute";
+
+
+            // 1. Firebase Initialization and Authentication
+            useEffect(() => {
+                try {
+                    const app = window.initializeApp(firebaseConfig);
+                    const newAuth = window.getAuth(app);
+                    const newDb = window.getFirestore(app);
+                    
+                    setDb(newDb);
+                    setAuth(newAuth);
+
+                    // Mandatory Auth setup: Use custom token if available, otherwise remain unauthenticated.
+                    const initializeAuth = async () => {
+                        try {
+                            if (initialAuthToken && newAuth) {
+                                await window.signInWithCustomToken(newAuth, initialAuthToken);
+                                console.log("Auth: Signed in with custom token (if available).");
+                            } else {
+                                // IMPORTANT: Removed signInAnonymously(). If no custom token, the user is unauthenticated.
+                                console.log("Auth: No custom token found. User is currently unauthenticated and must sign in.");
+                            }
+                        } catch (error) {
+                            console.error("Critical Auth Init Error (Custom Token):", error);
+                            // Guide user on how to fix auth/operation-not-allowed
+                            if (error.code === 'auth/operation-not-allowed') {
+                                console.error("FIX: To resolve 'auth/operation-not-allowed', ensure **Custom Token** provider is enabled in your Firebase Console > Authentication > Sign-in method.");
+                            }
+                        }
+                    };
+
+                    initializeAuth();
+
+                    // Listen for auth state changes
+                    const unsubscribe = window.onAuthStateChanged(newAuth, (currentUser) => {
+                        if (currentUser) {
+                            setUser(currentUser);
+                            setUserId(currentUser.uid);
+                            // Set role: only non-anonymous users get the 'issuer' role
+                            if (!currentUser.isAnonymous) {
+                                setUserRole('issuer');
+                            } else {
+                                // If for any reason the user is anonymous (e.g. they were before this change), set role to null
+                                setUserRole(null); 
+                            }
+                        } else {
+                            // User is unauthenticated (null)
+                            setUser(null);
+                            setUserId(null);
+                            setUserRole(null);
+                        }
+                        setIsAuthReady(true);
+                    });
+
+                    return () => unsubscribe();
+                } catch (error) {
+                    console.error("Firebase initialization failed:", error.message);
+                    setIsAuthReady(true);
+                }
+            }, []);
+
+            // 2. Global Role-Based Redirect Handler (Ensures logged-in users go to dashboard on refresh)
+            useEffect(() => {
+                // Only redirect if Auth is ready AND the user is confirmed as an 'issuer' 
+                // AND the current page is not already the issuer dashboard.
+                if (isAuthReady && userRole === 'issuer' && currentPage !== 'issuer') {
+                    setCurrentPage('issuer');
+                }
+            }, [isAuthReady, userRole, currentPage]); 
+
+
+            const handleSignOut = () => {
+                if (auth && window.signOut) {
+                    window.signOut(auth)
+                        .then(() => {
+                            setCurrentPage('landing');
+                            showToast('Signed out successfully.', 'info');
+                        })
+                        .catch(error => {
+                            showToast(`Sign out failed: ${error.message}`, 'error');
+                        });
+                }
+            };
+
+            // --- Components for different views ---
+
+            const PublicVerificationView = ({ db }) => {
+                const [certId, setCertId] = useState('');
+                const [token, setToken] = useState('');
+                const [result, setResult] = useState(null);
+                const [loading, setLoading] = useState(false);
+
+                const handleVerification = async (e) => {
+                    e.preventDefault();
+                    setLoading(true);
+                    setResult(null);
+
+                    if (!db) {
+                        setLoading(false);
+                        return showToast("Verification failed: Database connection not ready.", "error");
+                    }
+
+                    try {
+                        const certificatesCollectionRef = window.collection(db, getFirestoreCollectionPath('certificates'));
+                        const q = window.query(certificatesCollectionRef, window.where('certId', '==', certId));
+                        const querySnapshot = await window.getDocs(q);
+
+                        if (querySnapshot.empty) {
+                            setResult({ status: 'INVALID', message: 'Certificate ID not found in the registry.' });
+                            return;
+                        }
+
+                        const certDoc = querySnapshot.docs[0].data();
+                        
+                        // 1. Check Status
+                        if (certDoc.status !== 'valid') {
+                            setResult({ status: certDoc.status.toUpperCase(), message: `This certificate's status is: ${certDoc.status}. Contact the issuer for details.` });
+                            return;
+                        }
+
+                        // 2. Simulate Hash Check (Insecure client-side check)
+                        const providedTokenHash = simulateHash(token, GLOBAL_HASH_SALT);
+                        
+                        if (providedTokenHash === certDoc.verificationTokenHash) {
+                            setResult({ status: 'VALID', message: `Certificate successfully verified! Issued to ${certDoc.recipientName} for ${certDoc.title} on ${formatTimestamp(certDoc.issueDate)}.`, data: certDoc });
+                        } else {
+                            setResult({ status: 'INVALID', message: 'Verification Token is incorrect for this Certificate ID.' });
+                        }
+
+                    } catch (error) {
+                        console.error("Verification error:", error);
+                        showToast(`Verification failed due to a system error: ${error.message}`, "error");
+                        setResult({ status: 'ERROR', message: 'An internal error occurred during verification.' });
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+
+                return (
+                    <div className="max-w-4xl mx-auto p-6 bg-white shadow-xl rounded-2xl">
+                        <h1 className="text-3xl font-extrabold text-gray-800 mb-6 flex items-center">
+                            <Icon name="ShieldCheck" className="w-8 h-8 mr-3 text-indigo-600" />
+                            Certificate Verification
+                        </h1>
+                        <p className="text-sm text-gray-500 mb-6">Enter the **Certificate ID** and **Verification Token** to check its authenticity in the registry.</p>
+
+                        <form onSubmit={handleVerification} className="space-y-4">
+                            <input
+                                type="text"
+                                placeholder="Certificate ID (e.g., CERT-A1B2C3D4)"
+                                value={certId}
+                                onChange={(e) => setCertId(e.target.value.toUpperCase())}
+                                className="w-full p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
+                                required
+                            />
+                            <input
+                                type="password"
+                                placeholder="Verification Token (Secret)"
+                                value={token}
+                                onChange={(e) => setToken(e.target.value)}
+                                className="w-full p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
+                                required
+                            />
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition duration-200 disabled:opacity-50 flex items-center justify-center"
+                            >
+                                {loading ? 'Verifying...' : 'Verify Certificate'}
+                                {!loading && <Icon name="CheckCircle" className="ml-2 w-5 h-5" />}
+                            </button>
+                        </form>
+
+                        {result && (
+                            <div className={`mt-8 p-6 rounded-2xl shadow-inner ${result.status === 'VALID' ? 'bg-green-50 border-l-4 border-green-600' : 'bg-red-50 border-l-4 border-red-600'}`}>
+                                <h2 className={`text-2xl font-bold ${result.status === 'VALID' ? 'text-green-700' : 'text-red-700'} mb-3`}>
+                                    Verification Status: {result.status}
+                                </h2>
+                                <p className="text-gray-700 mb-4">{result.message}</p>
+                                {result.data && (
+                                     <div className='mt-4 p-3 bg-white rounded-xl border border-gray-200'>
+                                         <p className='text-sm font-semibold'>Details:</p>
+                                         <p className='text-xs'>Title: {result.data.title}</p>
+                                         <p className='text-xs'>Issuer: {result.data.issuingInstitutionName}</p>
+                                         <p className='text-xs'>Recipient Email: {result.data.recipientEmail}</p>
+                                     </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            const IssuerDashboard = ({ db, userId, issuerName }) => {
+                if (userRole !== 'issuer' || !userId) {
+                    return <div className="p-8 text-center text-red-600 font-semibold">Please sign in with an Issuer account to access the dashboard.</div>;
+                }
+                
+                const [certificates, setCertificates] = useState([]);
+                const [loadingIssuance, setLoadingIssuance] = useState(false); 
+                const [isCreating, setIsCreating] = useState(false);
+                
+                const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
+                const [draftedEmail, setDraftedEmail] = useState(null);
+                const [lastIssuedDetails, setLastIssuedDetails] = useState(null);
+
+                const [certForm, setCertForm] = useState({
+                    recipientName: '', recipientEmail: '', title: '', issueDate: new Date().toISOString().substring(0, 10),
+                    expiryDate: '', description: '', grade: '', batchId: '', customFields: ''
+                });
+
+                // Real-time listener for the Issuer's certificates
+                useEffect(() => {
+                    if (!db || !userId) return;
+
+                    const certificatesCollectionRef = window.collection(db, getFirestoreCollectionPath('certificates'));
+                    // Query for certificates issued by the current user
+                    const q = window.query(certificatesCollectionRef, window.where('issuerId', '==', userId));
+
+                    const unsubscribe = window.onSnapshot(q, (snapshot) => {
+                        const fetchedCerts = snapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data()
+                        }));
+                        setCertificates(fetchedCerts.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)));
+                    }, (error) => {
+                        console.error("Error fetching certificates:", error);
+                        showToast("Failed to load certificates in real-time.", "error");
+                    });
+
+                    return () => unsubscribe();
+                }, [db, userId]);
+
+
+                const handleFormChange = (e) => {
+                    const { name, value } = e.target;
+                    setCertForm(prev => ({
+                        ...prev,
+                        [name]: value
+                    }));
+                    setDraftedEmail(null);
+                };
+
+                const handleGenerateDescription = async () => {
+                    if (!certForm.title) {
+                        showToast("Please enter a Certificate Title first.", "info");
+                        return;
+                    }
+
+                    setIsGeneratingDescription(true);
+                    try {
+                        const systemPrompt = "You are an expert credentialing content writer. Based on the certificate title and recipient's grade, write a concise, professional, single-paragraph description (under 50 words) of what the recipient achieved and what the credential signifies.";
+                        const userQuery = `Certificate Title: ${certForm.title}. Grade/Score: ${certForm.grade || 'A distinction was achieved'}.`;
+
+                        const generatedText = await callGeminiApi(systemPrompt, userQuery);
+                        
+                        setCertForm(prev => ({ ...prev, description: generatedText.trim() }));
+                        showToast("Description generated successfully by AI.", "success");
+
+                    } catch (error) {
+                         showToast(`AI generation failed: ${error.message}. Please try again.`, "error");
+                    } finally {
+                        setIsGeneratingDescription(false);
+                    }
+                };
+
+                const handleDraftEmail = async (certData, plainToken) => {
+                    setDraftedEmail({ text: 'Drafting email...', loading: true });
+                    
+                    try {
+                        const systemPrompt = "You are a professional email composer. Draft a congratulatory email to the certificate recipient. Include their full name, the certificate title, the Certificate ID, and the confidential Verification Token.";
+                        const userQuery = `Draft an email for: Recipient: ${certData.recipientName}, Title: ${certData.title}, ID: ${certData.certId}, Token: ${plainToken}, Issuer: ${certData.issuingInstitutionName}. The verification link is not available, just mention they must use the ID and Token on the platform.`;
+
+                        const generatedText = await callGeminiApi(systemPrompt, userQuery);
+
+                        setDraftedEmail({ text: generatedText.trim(), loading: false });
+                        showToast("Recipient email drafted by AI.", "info");
+
+                    } catch (error) {
+                        setDraftedEmail({ text: 'Failed to draft email.', loading: false });
+                        showToast(`AI email drafting failed: ${error.message}.`, "error");
+                    }
+                };
+
+                const handleCreateCertificate = async (e) => {
+                    e.preventDefault();
+                    
+                    setLoadingIssuance(true);
+                    setDraftedEmail(null);
+                    
+                    try {
+                         // 1. Generate unique identifiers and token hash
+                         const certId = generateCertId();
+                         const plainToken = generateToken();
+                         const verificationTokenHash = simulateHash(plainToken, GLOBAL_HASH_SALT);
+
+                         // 2. Parse Custom Fields
+                         let customFields = {};
+                         if (certForm.customFields) {
+                             try {
+                                 // Check if the input is a non-empty string before attempting to parse
+                                 customFields = JSON.parse(certForm.customFields);
+                             } catch (err) {
+                                 // FIX: Throw more detailed error message from JSON.parse failure
+                                 throw new Error(`Custom Fields must be valid JSON. Parsing failed with: ${err.message}`);
+                             }
+                         }
+
+                         // 3. Prepare Certificate Data
+                         const now = new Date();
+                         const certData = {
+                            certId: certId,
+                            issuerId: userId,
+                            recipientName: certForm.recipientName,
+                            recipientEmail: certForm.recipientEmail,
+                            title: certForm.title,
+                            issuingInstitutionName: issuerName,
+                            issueDate: window.Timestamp.fromDate(new Date(certForm.issueDate)),
+                            expiryDate: certForm.expiryDate ? window.Timestamp.fromDate(new Date(certForm.expiryDate)) : null,
+                            description: certForm.description,
+                            grade: certForm.grade,
+                            customFields: customFields,
+                            batchId: certForm.batchId || null,
+                            status: 'valid', // Set to 'valid' upon issuance
+                            verificationTokenHash: verificationTokenHash,
+                            createdAt: window.Timestamp.fromDate(now),
+                            updatedAt: window.Timestamp.fromDate(now),
+                            fileURL: null // Placeholder for real file URL (upload logic is omitted for simplicity)
+                         };
+
+                         // 4. Save to Firestore
+                         const certificatesCollectionRef = window.collection(db, getFirestoreCollectionPath('certificates'));
+                         const docRef = await window.addDoc(certificatesCollectionRef, certData);
+
+                         // 5. Generate and mock file save (File upload logic skipped)
+                         const fileBlob = generateCertificatePdfData(certData);
+                         // In production, this Blob would be uploaded to Firebase Storage, and the docRef updated with the URL.
+                         // For now, we'll just log the download link for the mock file.
+                         const mockDownloadUrl = URL.createObjectURL(fileBlob);
+                         await window.updateDoc(docRef, { fileURL: mockDownloadUrl });
+                         
+
+                         // Success feedback
+                         setIsCreating(false);
+                         setCertForm({ recipientName: '', recipientEmail: '', title: '', issueDate: new Date().toISOString().substring(0, 10), expiryDate: '', description: '', grade: '', batchId: '', customFields: '' });
+                         setLastIssuedDetails({ certData, plainToken, docId: docRef.id, mockDownloadUrl }); 
+                         showToast(`Certificate Issued! ID: ${certId}. Document saved to Firestore.`, 'success');
+
+                    } catch (error) {
+                        console.error("Certificate issuance failed:", error);
+                        showToast(`Issuance failed: ${error.message}.`, "error");
+                        // If issuance fails, clear the custom fields input to force user to correct it or leave it blank
+                        setCertForm(prev => ({ ...prev, customFields: '' }));
+                    } finally {
+                        setLoadingIssuance(false);
+                    }
+                };
+
+                const handleRevoke = async (certId, docId) => {
+                    // Use a custom modal or message box instead of confirm()
+                    const isConfirmed = prompt(`Type 'REVOKE ${certId}' to confirm revocation of this certificate:`);
+                    if (isConfirmed !== `REVOKE ${certId}`) return;
+                    
+                    try {
+                        const certDocRef = window.doc(db, getFirestoreCollectionPath('certificates'), docId);
+                        await window.updateDoc(certDocRef, { 
+                            status: 'revoked', 
+                            updatedAt: window.Timestamp.fromDate(new Date())
+                        });
+                        showToast(`Certificate ${certId} revoked successfully.`, 'info');
+                    } catch (error) {
+                        console.error("Revocation failed:", error);
+                        showToast(`Revocation failed: ${error.message}`, 'error');
+                    }
+                };
+
+                return (
+                    <div className="p-6">
+                        <div className="flex justify-between items-center mb-6">
+                            <h1 className="text-3xl font-bold text-indigo-700">Issuer Dashboard: {issuerName}</h1>
+                            <button
+                                onClick={() => { setIsCreating(true); setLastIssuedDetails(null); setDraftedEmail(null); }}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-xl shadow-lg transition duration-200 flex items-center"
+                            >
+                                <Icon name="Plus" className="w-5 h-5 mr-2" />
+                                Issue New Certificate
+                            </button>
+                        </div>
+
+                        {lastIssuedDetails && (
+                            <div className="mb-8 p-6 bg-yellow-50 rounded-2xl shadow-inner border border-yellow-200">
+                                <h2 className="text-2xl font-bold text-yellow-800 mb-4">Post-Issuance Actions</h2>
+                                <div className='flex flex-col sm:flex-row items-start sm:items-center justify-between'>
+                                    <p className='text-gray-700 mb-4 sm:mb-0'>
+                                        Certificate **{lastIssuedDetails.certData.certId}** issued. <br/>
+                                        <span className='font-mono text-sm break-all'>Token: {lastIssuedDetails.plainToken} (CONFIDENTIAL: Use for email only)</span>
+                                    </p>
+                                    <button
+                                        onClick={() => handleDraftEmail(lastIssuedDetails.certData, lastIssuedDetails.plainToken)}
+                                        disabled={draftedEmail && draftedEmail.loading}
+                                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-xl shadow-md transition duration-200 disabled:opacity-50 flex items-center h-fit"
+                                    >
+                                        {draftedEmail && draftedEmail.loading ? 'Drafting...' : '✨ Draft Recipient Email'}
+                                        <Icon name="Sparkles" className="w-5 h-5 ml-2" />
+                                    </button>
+                                </div>
+                                
+                                {draftedEmail && (
+                                    <div className="mt-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">AI Drafted Email Content:</label>
+                                        <textarea
+                                            readOnly
+                                            value={draftedEmail.text}
+                                            className="w-full p-3 border rounded-xl bg-white font-mono text-sm resize-none"
+                                            rows="10"
+                                            // Fallback for copy command
+                                            onClick={(e) => { e.target.select(); document.execCommand('copy'); showToast("Email content copied to clipboard!", "info"); }}
+                                        />
+                                        <p className='text-xs text-gray-500 mt-1'>Click the text area to copy the email content.</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {isCreating && (
+                            <div className="mb-8 p-6 bg-indigo-50 rounded-2xl shadow-inner border border-indigo-200">
+                                <h2 className="text-2xl font-bold text-indigo-800 mb-4 flex justify-between items-center">
+                                    New Certificate Issuance
+                                    <button onClick={() => setIsCreating(false)} className="text-red-500 hover:text-red-700"><Icon name="X" /></button>
+                                </h2>
+                                <form onSubmit={handleCreateCertificate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <input type="text" name="recipientName" placeholder="Recipient Full Name*" value={certForm.recipientName} onChange={handleFormChange} required className="p-3 border rounded-xl" />
+                                    <input type="email" name="recipientEmail" placeholder="Recipient Email (Optional)" value={certForm.recipientEmail} onChange={handleFormChange} className="p-3 border rounded-xl" />
+                                    <input type="text" name="title" placeholder="Certificate Title*" value={certForm.title} onChange={handleFormChange} required className="p-3 border rounded-xl" />
+                                    <input type="text" name="grade" placeholder="Grade/Score (Optional)" value={certForm.grade} onChange={handleFormChange} className="p-3 border rounded-xl" />
+                                    <input type="date" name="issueDate" placeholder="Issue Date*" value={certForm.issueDate} onChange={handleFormChange} required className="p-3 border rounded-xl" />
+                                    <input type="date" name="expiryDate" placeholder="Expiry Date (Optional)" value={certForm.expiryDate} onChange={handleFormChange} className="p-3 border rounded-xl" />
+                                    
+                                    <div className="md:col-span-2 space-y-2">
+                                        <div className='flex items-center space-x-3'>
+                                            <textarea name="description" placeholder="Course/Module Description" value={certForm.description} onChange={handleFormChange} className="p-3 border rounded-xl flex-grow" rows="3" required></textarea>
+                                            <button
+                                                type="button"
+                                                onClick={handleGenerateDescription}
+                                                disabled={isGeneratingDescription || !certForm.title}
+                                                className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-xl shadow-md transition duration-200 disabled:opacity-50 flex items-center h-fit"
+                                            >
+                                                {isGeneratingDescription ? 'Generating...' : '✨ Generate Description'}
+                                                <Icon name="Sparkles" className="w-5 h-5 ml-2" />
+                                            </button>
+                                        </div>
+                                        <p className='text-xs text-gray-500'>Generate a professional description based on the Title and Grade.</p>
+                                    </div>
+
+                                    {/* Updated placeholder for Certify */}
+                                    <textarea name="customFields" placeholder='Custom Fields (JSON format, optional: e.g., {"Duration": "4 weeks"})' value={certForm.customFields} onChange={handleFormChange} className="md:col-span-2 p-3 border rounded-xl" rows="3"></textarea>
+                                    <input type="text" name="batchId" placeholder="Batch ID (Optional)" value={certForm.batchId} onChange={handleFormChange} className="md:col-span-2 p-3 border rounded-xl" />
+                                    
+                                    <button
+                                        type="submit"
+                                        disabled={loadingIssuance}
+                                        className="md:col-span-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition duration-200 disabled:opacity-50 flex items-center justify-center"
+                                    >
+                                        {loadingIssuance ? 'Generating and Archiving...' : 'Generate and Issue Certificate'}
+                                    </button>
+                                </form>
+                            </div>
+                        )}
+
+                        <div className="bg-white p-6 rounded-2xl shadow-lg">
+                            <h2 className="text-2xl font-bold text-gray-800 mb-4">Issued Certificates ({certificates.length})</h2>
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recipient</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issue Date</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {certificates.map((cert) => (
+                                            <tr key={cert.id} className={cert.status === 'revoked' ? 'bg-red-50' : ''}>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{cert.certId}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cert.recipientName}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cert.title}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatTimestamp(cert.issueDate)}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${cert.status === 'valid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                        {cert.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                    {cert.status === 'valid' && (
+                                                        <button onClick={() => handleRevoke(cert.certId, cert.id)} className="text-red-600 hover:text-red-900 mr-3">Revoke</button>
+                                                    )}
+                                                    {cert.fileURL && (
+                                                         <a href={cert.fileURL} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-900">Download</a>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const UserSignInPage = ({ auth, setCurrentPage, showToast }) => {
+                const [email, setEmail] = useState('');
+                const [password, setPassword] = useState('');
+                const [loading, setLoading] = useState(false);
+
+                const handleAuth = async (e) => {
+                    e.preventDefault();
+                    setLoading(true);
+                    
+                    if (!auth || !window.signInWithEmailAndPassword) {
+                         setLoading(false);
+                         return showToast("Authentication service not initialized.", "error");
+                    }
+                    
+                    try {
+                        const userCredential = await window.signInWithEmailAndPassword(auth, email, password);
+                        // The onAuthStateChanged listener in the App component will detect this change, 
+                        // set userRole to 'issuer', and the global useEffect will handle the redirect to 'issuer'.
+                        showToast(`Welcome, ${userCredential.user.email}!`, "success");
+                    } catch (error) {
+                        console.error("Auth error:", error);
+                        // Add specific guidance for Email/Password operation not allowed error
+                        if (error.code === 'auth/operation-not-allowed') {
+                             console.error("FIX: To use Email/Password Sign In, ensure the provider is enabled in your Firebase Console > Authentication > Sign-in method.");
+                        }
+                        showToast(`Login failed: ${error.message}`, "error");
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+                
+                return (
+                    <div className="max-w-md mx-auto p-8 bg-white shadow-2xl rounded-3xl mt-12">
+                        <h1 className="text-3xl font-bold mb-6 text-center text-indigo-700">Issuer Sign In</h1>
+                        <p className="text-sm text-gray-500 text-center mb-6">
+                            Use your email and password to access the Dashboard. 
+                        </p>
+
+                        <form onSubmit={handleAuth} className="space-y-4">
+                            <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full p-3 border border-gray-300 rounded-xl" />
+                            <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full p-3 border border-gray-300 rounded-xl" />
+                            <button type="submit" disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl shadow-md transition duration-200 disabled:opacity-50">
+                                {loading ? 'Signing In...' : 'Sign In'}
+                            </button>
+                        </form>
+                    </div>
+                );
+            };
+
+
+            const NavItem = ({ name, targetPage, current }) => {
+                const iconMap = {
+                    'Verify': 'ShieldCheck',
+                    'Dashboard': 'FileText',
+                    'Home': 'User'
+                };
+
+                const handleClick = () => {
+                    setCurrentPage(targetPage);
+                };
+
+                return (
+                    <button
+                        onClick={handleClick}
+                        className={`py-2 px-4 rounded-xl font-semibold transition duration-200 flex items-center ${current ? 'bg-white text-indigo-700 shadow-md' : 'text-gray-200 hover:bg-indigo-700'}`}
+                    >
+                        <Icon name={iconMap[name]} className="w-5 h-5 mr-2" />
+                        {name}
+                    </button>
+                );
+            };
+
+            // --- Main Rendering Logic ---
+
+            const renderContent = () => {
+                if (!isAuthReady) {
+                    return (
+                        <div className="flex items-center justify-center min-h-screen bg-gray-100">
+                            <p className="text-xl font-medium text-indigo-600">Initializing Application...</p>
+                        </div>
+                    );
+                }
+
+                switch (currentPage) {
+                    case 'verify':
+                        return <PublicVerificationView db={db} />;
+                    case 'issuer':
+                        return <IssuerDashboard db={db} userId={userId} issuerName={institutionName} />;
+                    case 'signin':
+                        return <UserSignInPage auth={auth} setCurrentPage={setCurrentPage} showToast={showToast} />;
+                    case 'landing':
+                    default:
+                        return (
+                            <div className="max-w-4xl mx-auto p-6 bg-white shadow-xl rounded-2xl mt-12 text-center">
+                                <h1 className="text-4xl font-extrabold text-gray-900 mb-4">Secure Digital Certificate Platform</h1>
+                                <p className="text-lg text-gray-600 mb-8">Instantly verify the authenticity of tamper-evident digital credentials using Firebase Firestore.</p>
+
+                                <div className="flex flex-col md:flex-row justify-center gap-6">
+                                    <button
+                                        onClick={() => setCurrentPage('verify')}
+                                        className="bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-8 rounded-xl shadow-lg transition duration-200 text-xl flex items-center justify-center"
+                                    >
+                                        <Icon name="ShieldCheck" className="w-6 h-6 mr-2" />
+                                        Verify Certificate
+                                    </button>
+                                    
+                                    {userRole === 'issuer' ? (
+                                        <button
+                                            onClick={() => setCurrentPage('issuer')}
+                                            className="bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transition duration-200 text-xl flex items-center justify-center"
+                                        >
+                                            Go to Institution Dashboard
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => setCurrentPage('signin')}
+                                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transition duration-200 text-xl flex items-center justify-center"
+                                        >
+                                            <Icon name="User" className="w-6 h-6 mr-2" />
+                                            Institution Login
+                                        </button>
+                                    )}
+                                </div>
+
+
+                            </div>
+                        );
+                }
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-50 font-sans">
+                    <header className="bg-indigo-600 shadow-md">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row justify-between items-center">
+                            <h1 className="text-2xl font-extrabold text-white mb-2 md:mb-0">
+                                Certify
+                            </h1>
+                            <nav className="flex space-x-2 md:space-x-4">
+                                <NavItem name="Home" targetPage="landing" current={currentPage === 'landing'} />
+                                <NavItem name="Verify" targetPage="verify" current={currentPage === 'verify'} />
+
+                                {/* Dashboard link ONLY shows if userRole is 'issuer' */}
+                                {userRole === 'issuer' && (
+                                     <NavItem name="Dashboard" targetPage="issuer" current={currentPage === 'issuer'} />
+                                )}
+                                
+                                {/* Sign Out/Login button also ONLY uses userRole */}
+                                {userRole === 'issuer' ? (
+                                    <button
+                                        onClick={handleSignOut}
+                                        className="py-2 px-4 rounded-xl font-semibold transition duration-200 bg-red-500 hover:bg-red-600 text-white flex items-center"
+                                    >
+                                        <Icon name="LogOut" className="w-5 h-5 mr-2" />
+                                        Sign Out ({user ? user.email || 'Issuer' : 'Issuer'})
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => setCurrentPage('signin')}
+                                        className="py-2 px-4 rounded-xl font-semibold transition duration-200 bg-green-500 hover:bg-green-600 text-white"
+                                    >
+                                        Institution Login
+                                    </button>
+                                )}
+                            </nav>
+                        </div>
+                    </header>
+
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                        {renderContent()}
+                    </main>
+
+                    {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+                </div>
+            );
+        };
+
+        // Use ReactDOM.createRoot for React 18
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+</html>

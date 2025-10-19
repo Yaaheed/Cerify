@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow public read access to certificates for verification
+    match /artifacts/{appId}/public/data/certificates/{certId} {
+      allow read: if true;
+      // Allow create only if authenticated and issuerId matches auth uid
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.issuerId;
+      // Allow update only if authenticated and issuerId matches auth uid (e.g., for revocation)
+      allow update: if request.auth != null && request.auth.uid == resource.data.issuerId;
+      // No delete allowed
+    }
+  }
+}
