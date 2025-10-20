@@ -87,14 +87,9 @@
     <!-- PWA Install Prompt and Service Worker -->
     <script>
         // PWA Install Prompt
-        let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
-            deferredPrompt = e;
-            // Trigger React to show install button
-            if (window.setInstallPrompt) {
-                window.setInstallPrompt(e);
-            }
+            window.deferredPrompt = e;
         });
 
         // Register Service Worker for PWA
@@ -406,6 +401,10 @@ Status: VALID (as of creation)
                     setDeferredPrompt(e);
                     setShowInstallButton(true);
                 };
+                // If the event already fired before React loaded, handle it now
+                if (window.deferredPrompt) {
+                    window.setInstallPrompt(window.deferredPrompt);
+                }
                 const handleAppInstalled = () => {
                     setShowInstallButton(false);
                     setDeferredPrompt(null);
