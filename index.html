@@ -87,6 +87,7 @@
     <!-- PWA Install Prompt and Service Worker -->
     <script>
         // PWA Install Prompt
+        let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
@@ -116,9 +117,6 @@
     <script type="text/babel">
         
         const { useState, useEffect, useCallback, useMemo } = React;
-
-        // --- Install PWA Functionality ---
-        let deferredPrompt;
 
         // --- Global Constants and Configuration (Mandatory Canvas Variables) ---
         // Access global variables __app_id, __firebase_config, __initial_auth_token

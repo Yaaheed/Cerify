@@ -2,7 +2,8 @@ const CACHE_NAME = 'certify-v1';
 const urlsToCache = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/icon.png'
 ];
 
 // Install event: Cache resources
@@ -13,6 +14,7 @@ self.addEventListener('install', event => {
         return cache.addAll(urlsToCache);
       })
   );
+  self.skipWaiting();
 });
 
 // Fetch event: Serve from cache if available, otherwise fetch from network
@@ -26,7 +28,7 @@ self.addEventListener('fetch', event => {
   );
 });
 
-// Activate event: Clean up old caches
+// Activate event: Clean up old caches and claim clients
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
@@ -39,4 +41,5 @@ self.addEventListener('activate', event => {
       );
     })
   );
+  self.clients.claim();
 });
