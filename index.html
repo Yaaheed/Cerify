@@ -34,6 +34,12 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Load jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script>
+        // Expose jsPDF globally
+        window.jsPDF = window.jspdf.jsPDF;
+    </script>
 
     <!--
         Inject Firebase Config: Set global variables before Firebase initialization.
@@ -219,44 +225,67 @@
         };
 
         /**
-         * Mocks the generation of a certificate PDF by creating a text-based Blob.
+         * Generates a real PDF certificate using jsPDF.
          */
         const generateCertificatePdfData = (data) => {
-            const issueDateStr = formatTimestamp(data.issueDate);
-            const expiryDateStr = data.expiryDate ? formatTimestamp(data.expiryDate) : 'None';
-            const customFieldsStr = Object.keys(data.customFields).length > 0
-                ? Object.entries(data.customFields).map(([key, value]) => `\n- ${key}: ${value}`).join('')
-                : 'None';
-            
-            const content = `
-*************************************************************
-|         SECURE DIGITAL CERTIFICATE OF ACHIEVEMENT         |
-*************************************************************
+            const doc = new window.jsPDF();
 
-Issuer: ${data.issuingInstitutionName}
-Recipient: ${data.recipientName}
-Recipient Email: ${data.recipientEmail || 'N/A'}
+            // Set font and size
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(18);
+            doc.text('SECURE DIGITAL CERTIFICATE OF ACHIEVEMENT', 20, 30);
 
-Title: ${data.title}
-Grade/Score: ${data.grade}
-Description: ${data.description}
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(12);
 
---- Verification Details ---
-Certificate ID: ${data.certId}
-Issue Date: ${issueDateStr}
-Expiry Date: ${expiryDateStr}
-Batch ID: ${data.batchId || 'N/A'}
+            let y = 50;
+            doc.text(`Issuer: ${data.issuingInstitutionName}`, 20, y);
+            y += 10;
+            doc.text(`Recipient: ${data.recipientName}`, 20, y);
+            y += 10;
+            doc.text(`Recipient Email: ${data.recipientEmail || 'N/A'}`, 20, y);
+            y += 10;
+            doc.text(`Title: ${data.title}`, 20, y);
+            y += 10;
+            doc.text(`Grade/Score: ${data.grade}`, 20, y);
+            y += 10;
+            doc.text(`Description: ${data.description}`, 20, y);
+            y += 20;
 
----
-Additional Metadata:
-${customFieldsStr}
-*************************************************************
-This document is valid only when successfully verified on the
-Certify platform using the unique ID and Token.
-Status: VALID (as of creation)
-*************************************************************
-`;
-            return new Blob([content], { type: 'application/pdf' });
+            doc.setFont('helvetica', 'bold');
+            doc.text('Verification Details', 20, y);
+            y += 10;
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Certificate ID: ${data.certId}`, 20, y);
+            y += 10;
+            doc.text(`Issue Date: ${formatTimestamp(data.issueDate)}`, 20, y);
+            y += 10;
+            doc.text(`Expiry Date: ${data.expiryDate ? formatTimestamp(data.expiryDate) : 'None'}`, 20, y);
+            y += 10;
+            doc.text(`Batch ID: ${data.batchId || 'N/A'}`, 20, y);
+            y += 20;
+
+            if (Object.keys(data.customFields).length > 0) {
+                doc.setFont('helvetica', 'bold');
+                doc.text('Additional Metadata:', 20, y);
+                y += 10;
+                doc.setFont('helvetica', 'normal');
+                Object.entries(data.customFields).forEach(([key, value]) => {
+                    doc.text(`- ${key}: ${value}`, 20, y);
+                    y += 10;
+                });
+            }
+
+            y += 20;
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(10);
+            doc.text('This document is valid only when successfully verified on the', 20, y);
+            y += 10;
+            doc.text('Certify platform using the unique ID and Token.', 20, y);
+            y += 10;
+            doc.text('Status: VALID (as of creation)', 20, y);
+
+            return doc.output('blob');
         };
 
 
@@ -442,7 +471,6 @@ Status: VALID (as of creation)
 
             const PublicVerificationView = ({ db }) => {
                 const [certId, setCertId] = useState('');
-                const [token, setToken] = useState('');
                 const [result, setResult] = useState(null);
                 const [loading, setLoading] = useState(false);
 
@@ -474,14 +502,8 @@ Status: VALID (as of creation)
                             return;
                         }
 
-                        // 2. Simulate Hash Check (Insecure client-side check)
-                        const providedTokenHash = simulateHash(token, GLOBAL_HASH_SALT);
-                        
-                        if (providedTokenHash === certDoc.verificationTokenHash) {
-                            setResult({ status: 'VALID', message: `Certificate successfully verified! Issued to ${certDoc.recipientName} for ${certDoc.title} on ${formatTimestamp(certDoc.issueDate)}.`, data: certDoc });
-                        } else {
-                            setResult({ status: 'INVALID', message: 'Verification Token is incorrect for this Certificate ID.' });
-                        }
+                        // Certificate is valid
+                        setResult({ status: 'VALID', message: `Certificate successfully verified! Issued to ${certDoc.recipientName} for ${certDoc.title} on ${formatTimestamp(certDoc.issueDate)}.`, data: certDoc });
 
                     } catch (error) {
                         console.error("Verification error:", error);
@@ -498,7 +520,7 @@ Status: VALID (as of creation)
                             <Icon name="ShieldCheck" className="w-8 h-8 mr-3 text-indigo-600" />
                             Certificate Verification
                         </h1>
-                        <p className="text-sm text-gray-500 mb-6">Enter the **Certificate ID** and **Verification Token** to check its authenticity in the registry.</p>
+                        <p className="text-sm text-gray-500 mb-6">Enter the **Certificate ID** to check its authenticity in the registry.</p>
 
                         <form onSubmit={handleVerification} className="space-y-4">
                             <input
@@ -506,14 +528,6 @@ Status: VALID (as of creation)
                                 placeholder="Certificate ID (e.g., CERT-A1B2C3D4)"
                                 value={certId}
                                 onChange={(e) => setCertId(e.target.value.toUpperCase())}
-                                className="w-full p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
-                                required
-                            />
-                            <input
-                                type="password"
-                                placeholder="Verification Token (Secret)"
-                                value={token}
-                                onChange={(e) => setToken(e.target.value)}
                                 className="w-full p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
                                 required
                             />
@@ -854,7 +868,7 @@ Status: VALID (as of creation)
                                                         <button onClick={() => handleRevoke(cert.certId, cert.id)} className="text-red-600 hover:text-red-900 mr-3">Revoke</button>
                                                     )}
                                                     {cert.fileURL && (
-                                                         <a href={cert.fileURL} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-900">Download</a>
+                                                         <a href={cert.fileURL} download={`${cert.certId}.pdf`} className="text-indigo-600 hover:text-indigo-900">Download</a>
                                                     )}
                                                 </td>
                                             </tr>
