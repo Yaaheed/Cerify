@@ -84,8 +84,19 @@
         console.log("Firebase core functions are loaded and exposed globally for React.");
     </script>
 
-    <!-- Register Service Worker for PWA -->
+    <!-- PWA Install Prompt and Service Worker -->
     <script>
+        // PWA Install Prompt
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            // Trigger React to show install button
+            if (window.setInstallPrompt) {
+                window.setInstallPrompt(e);
+            }
+        });
+
+        // Register Service Worker for PWA
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js')
                 .then(registration => {
@@ -106,6 +117,8 @@
         
         const { useState, useEffect, useCallback, useMemo } = React;
 
+        // --- Install PWA Functionality ---
+        let deferredPrompt;
 
         // --- Global Constants and Configuration (Mandatory Canvas Variables) ---
         // Access global variables __app_id, __firebase_config, __initial_auth_token
@@ -302,11 +315,28 @@ Status: VALID (as of creation)
             const [userRole, setUserRole] = useState(null); // 'issuer' or null (default)
             const [isAuthReady, setIsAuthReady] = useState(false);
 
-            const [currentPage, setCurrentPage] = useState('landing'); 
+            const [currentPage, setCurrentPage] = useState('landing');
             const [toast, setToast] = useState(null);
+            const [deferredPrompt, setDeferredPrompt] = useState(null);
+            const [showInstallButton, setShowInstallButton] = useState(false);
 
             const showToast = (message, type = 'info') => {
                 setToast({ message, type });
+            };
+
+            const handleInstall = () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    deferredPrompt.userChoice.then((choiceResult) => {
+                        if (choiceResult.outcome === 'accepted') {
+                            console.log('User accepted the install prompt');
+                        } else {
+                            console.log('User dismissed the install prompt');
+                        }
+                        setDeferredPrompt(null);
+                        setShowInstallButton(false);
+                    });
+                }
             };
 
             // Hardcoded Institution Name for the Issuer (for this single-file demo)
@@ -370,6 +400,22 @@ Status: VALID (as of creation)
                     console.error("Firebase initialization failed:", error.message);
                     setIsAuthReady(true);
                 }
+            }, []);
+
+            // PWA Install Prompt
+            useEffect(() => {
+                window.setInstallPrompt = (e) => {
+                    setDeferredPrompt(e);
+                    setShowInstallButton(true);
+                };
+                const handleAppInstalled = () => {
+                    setShowInstallButton(false);
+                    setDeferredPrompt(null);
+                };
+                window.addEventListener('appinstalled', handleAppInstalled);
+                return () => {
+                    window.removeEventListener('appinstalled', handleAppInstalled);
+                };
             }, []);
 
             // 2. Global Role-Based Redirect Handler (Ensures logged-in users go to dashboard on refresh)
@@ -944,6 +990,16 @@ Status: VALID (as of creation)
                                         >
                                             <Icon name="User" className="w-6 h-6 mr-2" />
                                             Institution Login
+                                        </button>
+                                    )}
+
+                                    {showInstallButton && (
+                                        <button
+                                            onClick={handleInstall}
+                                            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-4 px-8 rounded-xl shadow-lg transition duration-200 text-xl flex items-center justify-center"
+                                        >
+                                            <Icon name="Sparkles" className="w-6 h-6 mr-2" />
+                                            Install App
                                         </button>
                                     )}
                                 </div>
